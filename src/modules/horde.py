@@ -2,11 +2,8 @@ import asyncio
 import base64
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 
 import aiohttp
-import ray
-import requests
 
 from common import colors
 from events import consumer, producer
@@ -53,14 +50,15 @@ async def caption(config, *args, **kwargs):
             f"{colors.RED}ONE@HORDE:{colors.WHITE} Requesting a caption from the AI Horde. Please wait."
         )
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(api, json=data) as response:
+            async with session.post(api, json=data) as response:
                 response_data = await response.json()
                 if response.status != 200:
                     logging.error(
-                        f"GET request failed with status code: {response.status}"
+                        f"POST request failed with status code: {response.status}"
                     )
-                    logging.error(response_data["err"])
-                    return response_data["err"]
+                    if "err" in response_data:
+                        logging.error(response_data["err"])
+                    return response_data.get("err", "Unknown error")
 
                 return response_data["data"]
 
@@ -137,14 +135,15 @@ async def generate(config, *args, **kwargs):
             f"{colors.RED}ONE@HORDE:{colors.WHITE} Requesting an image from the AI Horde. Please wait."
         )
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(api, json=data) as response:
+            async with session.post(api, json=data) as response:
                 response_data = await response.json()
                 if response.status != 200:
                     logging.error(
-                        f"GET request failed with status code: {response.status}"
+                        f"POST request failed with status code: {response.status}"
                     )
-                    logging.error(response_data["err"])
-                    return response_data["err"]
+                    if "err" in response_data:
+                        logging.error(response_data["err"])
+                    return response_data.get("err", "Unknown error")
 
                 return response_data["data"]
 
@@ -153,4 +152,4 @@ async def generate(config, *args, **kwargs):
 
 
 if __name__ == "__main__":
-    main()
+    main(config)
