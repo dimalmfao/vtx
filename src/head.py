@@ -64,6 +64,7 @@ def validation(config):
         "adapters": {"type": "list"},
         "assistant": {"type": "dict"},
         "tokenizer": {"type": ["boolean", "string"]},
+        "token_map": {"type": "dict"},
         "mode": {"type": "string"},
         "training": {
             "type": "dict",
@@ -90,7 +91,7 @@ def validation(config):
                 },
                 "name": {"type": "string"},
                 "strategy": {"type": "string"},
-                "initial_piers": {"type": "list"},
+                "initial_peers": {"type": "list"},
                 "alpha": {"type": "integer"},
                 "module_dropout": {"type": "float"},
                 "rank_dropout": {"type": "float"},
@@ -138,6 +139,9 @@ def validation(config):
                 "use_lookahead": {"type": "boolean"},
                 "k": {"type": "integer"},
                 "bias_correction": {"type": "boolean"},
+                "use_gc": {"type": "boolean"},
+                "adanorm": {"type": "boolean"},
+                "safeguard_warmup": {"type": "boolean"},
                 "init_lora_weights": {"type": "string"},
                 "swa_learning_rate": {"type": "float"},
                 "stride": {"type": "integer"},
@@ -270,6 +274,11 @@ class Cortex:
                 precision=config.get("precision", 32),
                 pre_seq_len=pre_seq_len,
             )
+
+            for k, v in config.get("token_map", {}).items():
+                setattr(
+                    prototype.tokenizer, k, prototype.tokenizer.convert_ids_to_tokens(v)
+                )
 
             if config.get("context_length") is not None:
                 setattr(
@@ -412,6 +421,13 @@ class Cortex:
                 return False
         return True
 
+    def _remove_words_and_right(self, text, words_to_remove):
+        for word in words_to_remove:
+            index = text.lower().find(word.lower())
+            if index != -1:
+                text = text[:index]
+        return text.strip()
+
     @to_thread
     def chat(
         self,
@@ -425,7 +441,6 @@ class Cortex:
         personas: List[str] = [],
         eos_tokens: list | None = None,
         generation_profile: str = "default",
-        dola_layers: str = "high",
     ):
         self.wait_in_queue(priority)
 
@@ -634,6 +649,13 @@ class Cortex:
                     continue
 
                 output = self.truncate_long_sequences(output, 20)
+                output = self._remove_words_and_right(
+                    output,
+                    ["CONTEXT:", "INPUT:", "OUTPUT:", "SYSTEM:", "USER:", "ASSISTANT:"],
+                )
+
+                if output == "":
+                    continue
 
                 bias = group[2]
                 success = True
@@ -670,7 +692,6 @@ class Cortex:
         cleanup: bool = False,
         generation_profile: str = "longform",
         forbidden_chars: list = [],
-        dola_layers: str = "low",
     ):
         self.wait_in_queue(priority)
 
@@ -745,6 +766,7 @@ class Cortex:
                     mode=self.config.get("mode", "transformer"),
                     generation_config=generation_config,
                     do_sample=generation_config.get("do_sample", True),
+                    dola_layers=generation_config.get("dola_layers", None),
                     temperature=temperature,
                     min_new_tokens=(
                         min_new_tokens

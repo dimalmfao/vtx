@@ -54,9 +54,9 @@ collections:
       repo: togethercomputer/RedPajama-Data-V2
       split: train
       subset: default
-      schema: 
-        raw_content: ''
-      buffer_size: 10000
+      schemas: 
+        - raw_content: ''
+      buffer_size: 1000
       languages: 
         - "en"
         - "de"
@@ -69,90 +69,118 @@ collections:
       hf: True
       repo: allenai/c4
       subset: multilingual
-      schema: 
-        text: ''
+      schemas: 
+        - text: ''
       split: train
       val_split: validation
       val_samples: 1000
-      buffer_size: 10000
+      buffer_size: 1000
     fineweb:
       hf: True
       repo: HuggingFaceFW/fineweb
       split: train
       subset: CC-MAIN-2024-10
-      schema: 
-        text: ''
+      schemas: 
+        - text: ''
       delimiter: '\n'
-      buffer_size: 10000
+      buffer_size: 1000
     wikipedia:
       hf: True
       repo: wikimedia/wikipedia
       split: train
       subset: 20231101.en
-      schema:
-        title: ''
-        text: '¶{text}:> '
+      schemas:
+        - title: ''
+          text: '¶{text}:> '
       patterns:
         - '{text}'
       delimiter: '\n'
-      buffer_size: 10000
+      buffer_size: 1000
     instruct:
       hf: True
       repo: Muennighoff/natural-instructions
       split: train
       val_split: test
-      schema: 
-        definition: '¶{context}:> '
-        inputs: '¶{user}:> '
-        targets: '¶{assistant}:> '
+      schemas: 
+        - definition: '¶{context}:> '
+          inputs: '¶{user}:> '
+          targets: '¶{assistant}:> '
       patterns:
         - '{context}'
         - '{user}'
         - '{assistant}'
       delimiter: '\n'
-      buffer_size: 10000
+      buffer_size: 1000
       val_samples: 1000
     cosmopedia-stories:
       hf: True
       repo: HuggingFaceTB/cosmopedia
       split: train
       subset: stories
-      schema: 
-        prompt: '¶{user1}:> '
-        text: '¶{user2}:> '
+      schemas: 
+        - prompt: '¶{user1}:> '
+          text: '¶{user2}:> '
       patterns:
         - '{user1}'
         - '{user2}'
       delimiter: '\n'
-      buffer_size: 10000
+      buffer_size: 1000
     cosmopedia-web:
       hf: True
       repo: HuggingFaceTB/cosmopedia
       split: train
       subset: web_samples_v2
-      schema: 
-        prompt: '¶{user1}:> '
-        text: '¶{user2}:> '
+      schemas: 
+        - prompt: '¶{user1}:> '
+          text: '¶{user2}:> '
       patterns:
         - '{user1}'
         - '{user2}'
       delimiter: '\n'
-      buffer_size: 10000
+      buffer_size: 1000
+    cosmopedia-python-edu:
+      hf: True
+      repo: HuggingFaceTB/smollm-corpus
+      split: train
+      subset: python-edu
+      schemas: 
+        - prompt: '¶{user1}:> '
+          text: '¶{user2}:> '
+        - prompt: 'INPUT: '
+          text: 'OUTPUT: '
+      patterns:
+        - '{user1}'
+        - '{user2}'
+      delimiter: '\n'
+      buffer_size: 1000
     dolly:
       hf: True
       repo: databricks/databricks-dolly-15k
       split: train
-      schema:
-      schema: 
-        context: '¶{context}:> '
-        instruction: '¶{instruction}:> '
-        response: '¶{response}:> '
+      schemas: 
+        - context: '¶{context}:> '
+          instruction: '¶{instruction}:> '
+          response: '¶{response}:> '
+        - context: 'SYSTEM: '
+          instruction: 'USER: '
+          response: 'ASSISTANT: '
+        - context: 'CONTEXT: '
+          instruction: 'INPUT: '
+          response: 'OUTPUT: '
       patterns:
         - '{context}'
         - '{instruction}'
         - '{response}'
       delimiter: '\n'
-      buffer_size: 10000
+      buffer_size: 1000
+    phi:
+      hf: True
+      repo: open-phi/textbooks
+      split: train
+      schemas:
+        - markdown: ''
+      delimiter: '\n'
+      buffer_size: 1000
 
 # https://huggingface.co/docs/transformers/main_classes/text_generation
 transformers:
@@ -176,6 +204,24 @@ transformers:
       top_k: 4
       repetition_penalty: 1.1
       no_repeat_ngram_size: 13
+    chaotic:
+      do_sample: True
+      min_new_tokens: 1
+      max_new_tokens: 512
+      temperature: 0.88888888
+      eta_cutoff: 0.002
+      penalty_alpha: 0.6
+      top_k: 4
+      repetition_penalty: 1.1
+    predictable:
+      do_sample: True
+      min_new_tokens: 1
+      max_new_tokens: 512
+      temperature: 0.3
+      eta_cutoff: 0.002
+      penalty_alpha: 0.6
+      top_k: 4
+      repetition_penalty: 1.2
     longform:
       do_sample: True
       min_new_tokens: 11
@@ -186,6 +232,18 @@ transformers:
       top_k: 4
       repetition_penalty: 1.1
       no_repeat_ngram_size: 13
+    gentle:
+      do_sample: True
+      min_new_tokens: 11
+      max_new_tokens: 512
+      temperature: 0.8
+      eta_cutoff: 0.002
+      penalty_alpha: 0.6
+      top_k: 4
+      # min_p: 0.05
+      repetition_penalty: 1.1
+      no_repeat_ngram_size: 13
+      # dola_layers: [1, 2, 3]
 
 reddit:
   enabled: False

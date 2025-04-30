@@ -1,7 +1,7 @@
 #!/bin/bash
 
 CONTAINERS='["lab", "ctx", "uxo", "tbd", "ipf", "pet", "bit"]'
-MODELS='["src", "genus", "frame", "mind", "heart", "soul", "wisdom", "envy", "chaos", "malice", "pain", "rot", "toe"]'
+MODELS='["src", "genus", "frame", "mind", "heart", "soul", "wisdom", "envy", "chaos", "malice", "pain", "rot", "sick", "toe"]'
 
 # Check for docker
 if ! command -v docker &> /dev/null; then
@@ -117,7 +117,8 @@ case $action in
         $DOCKER_COMPOSE_COMMAND -f compose.yml -f compose.services.yml pull ;;
     "up" | "auto")
         if [[ -z "$FOCUS" ]]; then
-            read -p "Which model should we focus on? ${MODELS} " FOCUS
+            echo "MODELS = ${MODELS}"
+            read -p "Which model should we focus on? " FOCUS
         fi
         if [[ "$action" == "auto" ]]; then
             DETACHED="true"
@@ -139,7 +140,8 @@ case $action in
             $GPU up ${ARG1} ;;
     "train" | "trial") 
         if [[ -z "$FOCUS" ]]; then
-            read -p "Which model should we train? ${MODELS} " FOCUS
+            echo "MODELS = ${MODELS}"
+            read -p "Which model should we train? " FOCUS
         fi
         $DOCKER_COMPOSE_COMMAND \
             -f compose.yml \

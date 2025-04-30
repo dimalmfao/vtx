@@ -2,10 +2,12 @@ import asyncio
 import base64
 import io
 import logging
+import math
 import os
 import random
 import re
 import threading
+import time
 from pprint import pprint
 
 import discord
@@ -56,6 +58,8 @@ def validation(config):
         "export_dms": {"type": "boolean"},
         "debug": {"type": "boolean"},
         "frequency": {"type": "float"},
+        "max_frequency": {"type": "float"},
+        "decay_rate": {"type": "float"},
         "reply_frequency": {"type": "float"},
         "mention_self_frequency": {"type": "float"},
         "mention_any_frequency": {"type": "float"},
@@ -130,7 +134,8 @@ async def subscribe_events(config):
 class Client(discord.Client):
     def __init__(self, *args, **kwargs):
         self.config = kwargs["config"]
-        self.ignoring = False
+        self.ignoring = {}
+        self.last_response_times = {}
         super().__init__(*args, **kwargs)
 
     async def on_ready(self):
@@ -217,8 +222,14 @@ class Client(discord.Client):
         except Exception as e:
             logging.error(e)
 
-    def ignore(self, boolean):
-        self.ignoring = boolean
+    def should_ignore(self, target="global"):
+        self.ignoring[target] = True
+
+    def should_not_ignore(self, target="global"):
+        self.ignoring[target] = False
+
+    def is_ignoring(self, target="global"):
+        return self.ignoring.get(target, False)
 
     # randomly generate commentary
     async def start_musing(self):
@@ -233,7 +244,7 @@ class Client(discord.Client):
                     if random.random() > frequency:
                         continue
 
-                    self.ignore(True)
+                    self.should_ignore()
 
                     persona = choice.get("persona")
                     instruction = choice.get("instruction")
@@ -263,7 +274,7 @@ class Client(discord.Client):
                 except Exception as e:
                     logging.error(e)
 
-            self.ignore(False)
+            self.should_not_ignore()
 
     async def send_dm(self, bias):
         user = self.get_user(bias)
@@ -292,6 +303,15 @@ class Client(discord.Client):
         except:
             return False
 
+    def calculate_frequency(
+        self, time_elapsed, max_frequency, min_frequency, decay_rate
+    ):
+        # Calculate the decayed frequency
+        decayed_frequency = max_frequency * math.exp(-decay_rate * time_elapsed)
+
+        # Ensure the frequency doesn't fall below the baseline
+        return max(decayed_frequency, min_frequency)
+
     # check every Discord message
     async def on_message(self, message):
         banned = await self.check_bans(guild=message.guild, user=message.author)
@@ -299,7 +319,9 @@ class Client(discord.Client):
             return
 
         reply_frequency = self.config["discord"].get("reply_frequency", 0.333)
-        reply = lambda weights: random.choices([True, False], weights=[reply_frequency, 1.0 - reply_frequency], k=1)[0]
+        reply = lambda weights: random.choices(
+            [True, False], weights=[reply_frequency, 1.0 - reply_frequency], k=1
+        )[0]
 
         if (
             message.author == self.user
@@ -313,7 +335,19 @@ class Client(discord.Client):
         transformed = "ERROR: Me Found."
         roll = random.random()
 
-        frequency = self.config["discord"].get("frequency", 0.0333)
+        min_frequency = self.config["discord"].get("frequency", 0.01)
+        max_frequency = self.config["discord"].get("max_frequency", 0.5)
+        decay_rate = self.config["discord"].get("decay_rate", 0.1)
+
+        current_time = time.time()
+        last_response_time = current_time - self.last_response_times.get(
+            message.channel.id, 0
+        )
+
+        frequency = self.calculate_frequency(
+            last_response_time, max_frequency, min_frequency, decay_rate
+        )
+
         mention_self_frequency = self.config["discord"].get(
             "mention_self_frequency", 0.88
         )
@@ -348,7 +382,7 @@ class Client(discord.Client):
             head.ctx.build_context(bias=int(self.user.id), message=pred)
             print(colors.GREEN + "ONE@DISCORD: " + colors.WHITE + pred)
 
-        if self.ignoring:
+        if self.is_ignoring(message.channel.id):
             return
 
         # We need to place all of the following logic into a dedicated function. We need to
@@ -370,17 +404,8 @@ class Client(discord.Client):
         #             f"{message.content} | {embed.title} | {embed.description}"
         #         )
 
-        message_log = message.content
-        # from pprint import pprint
-
-        # pprint(message)
-        if self.config["discord"].get("debug", False):
-            if message.guild is not None:
-                message_log = message_log + f" (guild:{message.guild.id})"
-            message_log = message_log + f" (sender:{message.author.id})"
-
         if message.content != "":
-            print(colors.BLUE + "ONE@DISCORD: " + colors.WHITE + message_log)
+            print(colors.BLUE + "ONE@DISCORD: " + colors.WHITE + message.content)
 
         # generate responses
         if "gen" in message.content.lower():
@@ -397,10 +422,10 @@ class Client(discord.Client):
         else:
             # increase probability of a response if bot is mentioned
             if self.user.mentioned_in(message):
-                frequency = mention_self_frequency
+                frequency = max(mention_self_frequency, frequency)
             # if a user is mentioned, attempt to respond as them
             elif len(message.mentions) > 0:
-                frequency = mention_any_frequency
+                frequency = max(mention_any_frequency, frequency)
                 bias = int(message.mentions[0].id)
 
         # increase response probability in private channels
@@ -417,9 +442,21 @@ class Client(discord.Client):
             no_transform = True
             reply = False
 
+        if self.config["discord"].get("debug", False):
+            if message.guild is not None:
+                print(f"Guild: {message.guild.id}")
+            print(f"Sender: {message.author.id}")
+            print(f"Time elapsed: {last_response_time:.2f}s")
+            print(f"Current frequency: {frequency:.4f}")
+            print(f"Roll: {roll:.4f}")
+            print(f"Will respond: {roll < frequency}")
+            print("--------------------")
+
         # check frequency before generating a response
         if roll > frequency:
             return
+
+        self.should_ignore(message.channel.id)
 
         # generate a response from context and bias
         await asyncio.sleep(random.randint(2, 13))
@@ -470,11 +507,16 @@ class Client(discord.Client):
                 )
 
             head.ctx.build_context(bias=int(bot_id), message=output)
+
+            self.last_response_times[message.channel.id] = time.time()
+
         except Exception as e:
             print(e)
             import traceback
 
             print(traceback.format_exc())
+
+        self.should_not_ignore(message.channel.id)
 
     # Handle bots that update messages token-by-token
     async def on_message_edit(self, before, after):

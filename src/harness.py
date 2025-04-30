@@ -11,12 +11,7 @@ import torch
 from lightning.pytorch import loggers
 from pypdf import PdfReader
 from tokenizers import Tokenizer
-from torch.utils.data import (
-    ConcatDataset,
-    DataLoader,
-    WeightedRandomSampler,
-    random_split,
-)
+from torch.utils.data import ConcatDataset, random_split
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -30,25 +25,17 @@ sys.path.insert(
 
 try:
     from aigen.aigen import aigen
-    from aigen.aigen.datasets import StaticDataset, merge_datasets
+    from aigen.aigen.datasets import StaticDataset
     from aigen.aigen.tokenizers import train_tokenizer
     from aigen.aigen.tuners import optimize_hparams
 except:
     from aigen import aigen
-    from aigen.datasets import StaticDataset, merge_datasets
+    from aigen.datasets import StaticDataset
     from aigen.tokenizers import train_tokenizer
     from aigen.tuners import optimize_hparams
 
 import extensions
-from common import (
-    colors,
-    config,
-    focus,
-    get_identity,
-    hash_directory,
-    list_full_paths,
-    nist_beacon,
-)
+from common import colors, config, focus, hash_directory, list_full_paths, nist_beacon
 
 model_config = config[focus]
 train_config = model_config["training"]
@@ -84,6 +71,7 @@ def main():
 
     # Resume training on an existing model, or start with a fresh base model
     if resume == True:
+        fresh_logs = False
         if not os.path.exists(
             "/data/models/" + focus + "/pytorch_model.bin"
         ) or not os.path.exists("/data/models/" + focus + "/model.safetensors"):
@@ -150,6 +138,9 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, **tokenizer_config)
 
+    for k, v in model_config.get("token_map", {}).items():
+        setattr(tokenizer, k, tokenizer.convert_ids_to_tokens(v))
+
     if hasattr(tokenizer, "pad_token") and tokenizer.pad_token is None:
         setattr(tokenizer, "pad_token", tokenizer.eos_token)
 
@@ -169,15 +160,15 @@ def main():
         if model_config.get("class"):
             setattr(pretrain_config, "_name_or_path", model_config.get("class"))
 
-    local_data = []
+    train_config["local_data"] = []
     if len(train_config["datasets"].get("local", [])) > 0:
-        local_data.append(build_local_datasets(train_config, tokenizer))
+        train_config["local_data"].append(build_local_datasets(train_config, tokenizer))
 
-    streaming_data = []
+    train_config["streaming_data"] = []
     if train_config["datasets"].get("streaming"):
         for dataset in train_config["datasets"].get("streaming", []):
             streaming_config = config["collections"]["streaming"][dataset.lower()]
-            streaming_data.append(streaming_config)
+            train_config["streaming_data"].append(streaming_config)
 
     # Erase old logs
     train_config["log_path"] = "/data/logs/" + focus
@@ -200,15 +191,6 @@ def main():
         precision=train_config.get("precision", model_config.get("precision", 32)),
         device_map=train_config.get("device_map", "auto"),
     )
-
-    train_config["local_data"] = local_data
-    train_config["streaming_data"] = streaming_data
-
-    print("training on the following collections:")
-    print(f"local data: {len(local_data)} sets")
-    print(f"streaming data: {streaming_data}")
-
-    time.sleep(3)
 
     if os.environ.get("TASK") == "trial":
         optimize_hparams(init_kwargs, train_config)
@@ -244,18 +226,15 @@ def create_dataset(
     tokenizer=None,
     block_size: int = 1024,
     stride: int = 0,
-    samples: float = 1.0,
+    exclude_suffixes=[],
 ):
     prefixes = [
         ".git",
         "/lab/reaper/logseq",
         "/lab/reaper/assets",
         "/lab/reaper/public",
-        "/lab/aigen/aigen/static",
         "/lab/opencog/learn/attic",
         "/lab/opencog/learn/learn-lang-diary",
-        "/src/__pycache__",
-        "/src/modules/__pycache__",
     ]
 
     suffixes = [
@@ -287,12 +266,10 @@ def create_dataset(
         "woff2",
         "xlsx",
         "zip",
-    ]
+    ] + exclude_suffixes
 
     files = list_full_paths(path)
     random.shuffle(files)
-
-    files = [item for item in files if random.random() < samples]
 
     intermediate_path = "/tmp/intermediate.txt"
 
@@ -310,6 +287,7 @@ def create_dataset(
                     break
 
             if skip == True:
+                print(f"excluding: {colors.RED}{file}{colors.WHITE}")
                 continue
 
             with open(file, "r") as content:
@@ -322,13 +300,12 @@ def create_dataset(
                             string += page + "\n"
                     else:
                         string = content.read()
-                    intermediate.write(string + f"{tokenizer.eos_token}")
+
+                    if len(string) > 0:
+                        intermediate.write(string + f"{tokenizer.eos_token}")
 
         except Exception as e:
-            with open(intermediate_path, "a") as intermediate:
-                intermediate.write(f"failed:{file}{tokenizer.eos_token}")
             print(f"failed: {colors.RED}{file}{colors.WHITE}")
-            logging.error(e)
 
     print(f"tokenizing: {colors.BLUE}{path}{colors.WHITE}")
 
@@ -385,6 +362,7 @@ def build_local_datasets(train_config, tokenizer):
                         tokenizer=tokenizer,
                         block_size=block_size,
                         stride=ds_config.get("stride", stride),
+                        exclude_suffixes=ds_config.get("exclude", []),
                     )
 
                     ds.save(cache_destination=cached)

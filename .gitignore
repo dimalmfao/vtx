@@ -14,5 +14,7 @@ book/static/tests
 *terraform*
 !infra/terraform
 *.key
+*.pub
 *.db
 .wrangler
+src/data
